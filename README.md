@@ -6,17 +6,23 @@ A fun multiplayer anime character battle game! Spin the roulette to collect your
 
 ## 🎮 How to Play
 
-1. **Create or Join a Room** - Enter your name and create a room, or join with a room code
-2. **Wait for Players** - 2-4 players can join each room
-3. **Spin the Roulette** - Each player gets 3 spins to collect anime characters
-4. **Battle!** - See who collected the strongest team based on total power levels
-5. **Share Results** - Share your epic battle results with friends!
+1. **Sign In** - Login with Google or Facebook to track your wins (optional)
+2. **Create or Join a Room** - Enter your name and create a room, or join with a room code
+3. **Wait for Players** - 2-4 players can join each room
+4. **Spin the Roulette** - Each player gets 3 spins to collect anime characters
+5. **Battle!** - See who collected the strongest team based on total power levels
+6. **Share Results** - Share your epic battle results with friends!
 
 ## 🌟 Features
 
+- 🔐 **Social Login** - Sign in with Google or Facebook to track your stats
+- 🏆 **Leaderboard** - Compete for the top spot on the global leaderboard
+- 📈 **Win Tracking** - All your wins, losses, and stats are saved
 - 🎰 **Roulette System** - Exciting spin animation to select characters
 - 👥 **Multiplayer** - Play with 2-4 friends in real-time
-- 🦸 **24 Anime Characters** - From Dragon Ball, Naruto, One Piece, Attack on Titan, and more!
+- 👀 **Spectator Mode** - Watch ongoing games without participating
+- 💬 **In-Game Chat** - Chat with players and spectators
+- 🦸 **50 Anime Characters** - From Dragon Ball, Naruto, One Piece, Jujutsu Kaisen, and more!
 - 📊 **Power Rankings** - Each character has a power level that determines battle outcomes
 - 📤 **Share Results** - Generate shareable links to show off your victories
 - 🌐 **Internet Play** - Easy to expose via ngrok for online play
@@ -33,11 +39,35 @@ A fun multiplayer anime character battle game! Spin the roulette to collect your
 # Install dependencies
 npm install
 
+# Copy the example env file
+cp .env.example .env
+
+# Edit .env with your OAuth credentials (see OAuth Setup below)
+
 # Start the server
 npm start
 ```
 
 The game will be available at `http://localhost:3000`
+
+### 🔐 OAuth Setup (Optional but Recommended)
+
+To enable Google and Facebook login:
+
+#### Google OAuth
+1. Go to [Google Cloud Console](https://console.developers.google.com/)
+2. Create a new project or select existing one
+3. Go to "Credentials" → "Create Credentials" → "OAuth 2.0 Client ID"
+4. Set Application Type to "Web application"
+5. Add `http://localhost:3000/auth/google/callback` to Authorized redirect URIs
+6. Copy Client ID and Client Secret to your `.env` file
+
+#### Facebook OAuth
+1. Go to [Facebook Developers](https://developers.facebook.com/)
+2. Create a new app (Consumer type)
+3. Add "Facebook Login" product
+4. Add `http://localhost:3000/auth/facebook/callback` to Valid OAuth Redirect URIs
+5. Copy App ID and App Secret to your `.env` file
 
 ### 🌐 Playing Over the Internet (ngrok)
 
@@ -46,7 +76,9 @@ To play with friends over the internet:
 1. Install ngrok: https://ngrok.com/download
 2. Run the game server: `npm start`
 3. In another terminal, run: `npx ngrok http 3000`
-4. Share the ngrok URL with your friends!
+4. Update `BASE_URL` in your `.env` to match your ngrok URL
+5. Update OAuth redirect URIs in Google/Facebook console
+6. Share the ngrok URL with your friends!
 
 ## 🎯 Game Rules
 
