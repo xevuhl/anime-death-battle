@@ -62,6 +62,15 @@ let isMyTurn = false;
 let isSpectator = false;
 let selectedMaxPlayers = 4;
 
+// Rarity colors and names for display
+const rarityConfig = {
+  common:    { color: '#9CA3AF', name: 'Common', glow: 'none' },
+  uncommon:  { color: '#22C55E', name: 'Uncommon', glow: '0 0 15px rgba(34, 197, 94, 0.5)' },
+  rare:      { color: '#3B82F6', name: 'Rare', glow: '0 0 20px rgba(59, 130, 246, 0.6)' },
+  epic:      { color: '#A855F7', name: 'Epic', glow: '0 0 25px rgba(168, 85, 247, 0.7)' },
+  legendary: { color: '#F59E0B', name: 'Legendary', glow: '0 0 30px rgba(245, 158, 11, 0.8), 0 0 60px rgba(245, 158, 11, 0.4)' }
+};
+
 // DOM Elements
 const screens = {
   menu: document.getElementById('menuScreen'),
@@ -602,16 +611,74 @@ function updateMyTeam(myCharacters) {
     return;
   }
   
-  container.innerHTML = myCharacters.map(char => `
-    <div class="character-card" style="border-color: ${char.color}">
-      <div class="character-card-image" style="border-color: ${char.color}">
-        ${characterEmojis[char.name] || '⭐'}
+  container.innerHTML = myCharacters.map(char => {
+    const rarity = char.rarity || { key: 'common', name: 'Common', color: '#9CA3AF' };
+    const rarityStyle = rarityConfig[rarity.key] || rarityConfig.common;
+    const isLegendary = rarity.key === 'legendary';
+    const isEpic = rarity.key === 'epic';
+    
+    return `
+      <div class="character-card ${isLegendary ? 'legendary' : ''} ${isEpic ? 'epic' : ''}" 
+           style="border-color: ${rarityStyle.color}; box-shadow: ${rarityStyle.glow}">
+        <div class="rarity-badge" style="background: ${rarityStyle.color}">${rarity.name}</div>
+        <div class="character-card-image" style="border-color: ${rarityStyle.color}">
+          ${characterEmojis[char.name] || '⭐'}
+        </div>
+        <div class="character-card-name">${char.name}</div>
+        <div class="character-card-anime">${char.anime}</div>
+        <div class="character-card-power">⚡ ${char.power.toLocaleString()}</div>
       </div>
-      <div class="character-card-name">${char.name}</div>
-      <div class="character-card-anime">${char.anime}</div>
-      <div class="character-card-power">⚡ ${char.power.toLocaleString()}</div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
+  
+  // Show synergy preview
+  updateSynergyPreview(myCharacters);
+}
+
+function updateSynergyPreview(myCharacters) {
+  // Count characters by anime
+  const animeCounts = {};
+  for (const char of myCharacters) {
+    animeCounts[char.anime] = (animeCounts[char.anime] || 0) + 1;
+  }
+  
+  // Find active synergies
+  const synergies = [];
+  for (const [anime, count] of Object.entries(animeCounts)) {
+    if (count >= 2) {
+      const bonusPercent = count >= 4 ? 20 : count >= 3 ? 12 : 5;
+      synergies.push({ anime, count, bonusPercent });
+    }
+  }
+  
+  // Update or create synergy display
+  let synergyContainer = document.getElementById('synergyPreview');
+  if (!synergyContainer) {
+    const teamPreview = document.querySelector('.team-preview');
+    if (teamPreview) {
+      synergyContainer = document.createElement('div');
+      synergyContainer.id = 'synergyPreview';
+      synergyContainer.className = 'synergy-preview';
+      teamPreview.appendChild(synergyContainer);
+    }
+  }
+  
+  if (synergyContainer) {
+    if (synergies.length === 0) {
+      synergyContainer.innerHTML = '';
+    } else {
+      synergyContainer.innerHTML = `
+        <div class="synergy-title">🔗 Active Synergies</div>
+        ${synergies.map(s => `
+          <div class="synergy-item">
+            <span class="synergy-anime">${s.anime}</span>
+            <span class="synergy-count">×${s.count}</span>
+            <span class="synergy-bonus">+${s.bonusPercent}%</span>
+          </div>
+        `).join('')}
+      `;
+    }
+  }
 }
 
 function updateAllPlayersStatus(players, currentPlayerId) {
@@ -622,11 +689,15 @@ function updateAllPlayersStatus(players, currentPlayerId) {
       <div class="player-status-name">${player.name} ${player.id === myPlayerId ? '(You)' : ''}</div>
       <div class="player-status-spins">${'🎰'.repeat(player.spinsLeft)} ${player.spinsLeft > 0 ? '' : '✅'}</div>
       <div class="player-status-chars">
-        ${player.characters.map(char => `
-          <div class="mini-char" style="border-color: ${char.color}" title="${char.name}">
-            ${characterEmojis[char.name] || '⭐'}
-          </div>
-        `).join('') || '<span style="opacity: 0.5; font-size: 0.8rem">No chars yet</span>'}
+        ${player.characters.map(char => {
+          const rarity = char.rarity || { key: 'common', color: '#9CA3AF' };
+          const rarityStyle = rarityConfig[rarity.key] || rarityConfig.common;
+          return `
+            <div class="mini-char ${rarity.key}" style="border-color: ${rarityStyle.color}; box-shadow: ${rarityStyle.glow}" title="${char.name} (${rarity.name})">
+              ${characterEmojis[char.name] || '⭐'}
+            </div>
+          `;
+        }).join('') || '<span style="opacity: 0.5; font-size: 0.8rem">No chars yet</span>'}
       </div>
     </div>
   `).join('');
@@ -709,32 +780,55 @@ function renderBattleArena(arena, winnerSection, battleData) {
   arena.innerHTML = battleData.players.map((player, index) => {
     const isWinner = index === 0;
     const rank = index === 0 ? '🥇 1st' : index === 1 ? '🥈 2nd' : index === 2 ? '🥉 3rd' : `${index + 1}th`;
+    const hasSynergy = player.synergies && player.synergies.length > 0;
     
     return `
       <div class="battle-player ${isWinner ? 'winner' : ''}" style="animation-delay: ${index * 0.2}s">
         <div class="battle-player-name">${player.name}</div>
         <div class="battle-player-rank">${rank}</div>
         <div class="battle-player-chars">
-          ${player.characters.map(char => `
-            <div class="battle-char">
-              <div class="battle-char-icon" style="border-color: ${char.color}">
-                ${characterEmojis[char.name] || '⭐'}
+          ${player.characters.map(char => {
+            const rarity = char.rarity || { key: 'common', name: 'Common', color: '#9CA3AF' };
+            const rarityStyle = rarityConfig[rarity.key] || rarityConfig.common;
+            return `
+              <div class="battle-char ${rarity.key === 'legendary' ? 'legendary' : ''} ${rarity.key === 'epic' ? 'epic' : ''}">
+                <div class="battle-char-rarity" style="background: ${rarityStyle.color}">${rarity.name}</div>
+                <div class="battle-char-icon" style="border-color: ${rarityStyle.color}; box-shadow: ${rarityStyle.glow}">
+                  ${characterEmojis[char.name] || '⭐'}
+                </div>
+                <div class="battle-char-name">${char.name}</div>
+                <div class="battle-char-power">⚡${char.power}</div>
               </div>
-              <div class="battle-char-name">${char.name}</div>
-              <div class="battle-char-power">⚡${char.power}</div>
+            `;
+          }).join('')}
+        </div>
+        <div class="battle-power-breakdown">
+          <div class="battle-base-power">Base: ⚡${(player.basePower || player.totalPower).toLocaleString()}</div>
+          ${hasSynergy ? `
+            <div class="battle-synergy-bonus">
+              <div class="synergy-bonus-label">🔗 Synergy Bonuses:</div>
+              ${player.synergies.map(s => `
+                <div class="synergy-bonus-item">
+                  ${s.anime} (×${s.count}): +${s.bonusPercent}% (+${s.bonusAmount.toLocaleString()})
+                </div>
+              `).join('')}
             </div>
-          `).join('')}
+          ` : ''}
         </div>
         <div class="battle-total-power">⚡ ${player.totalPower.toLocaleString()}</div>
-        <div class="battle-total-label">Total Power</div>
+        <div class="battle-total-label">Total Power${hasSynergy ? ' (with synergy)' : ''}</div>
       </div>
     `;
   }).join('');
   
-  // Winner announcement
+  // Winner announcement with synergy callout
+  const winnerSynergy = battleData.winner.synergyBonus > 0 
+    ? ` (including +${battleData.winner.synergyBonus.toLocaleString()} synergy bonus!)` 
+    : '';
+  
   winnerSection.innerHTML = `
     <div class="winner-text">🏆 WINNER 🏆</div>
-    <div class="winner-name">${battleData.winner.name} wins with ${battleData.winner.totalPower.toLocaleString()} power!</div>
+    <div class="winner-name">${battleData.winner.name} wins with ${battleData.winner.totalPower.toLocaleString()} power${winnerSynergy}</div>
   `;
 }
 
