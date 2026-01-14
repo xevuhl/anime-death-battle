@@ -1,0 +1,19 @@
+{
+  "name": "anime-death-battle",
+  "version": "1.0.0",
+  "description": "A multiplayer anime character battle game with roulette selection",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "tunnel": "ngrok http 3000"
+  },
+  "keywords": ["anime", "battle", "multiplayer", "game"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2",
+    "uuid": "^9.0.0"
+  }
+}

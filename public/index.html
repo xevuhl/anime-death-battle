@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Anime Death Battle ⚔️</title>
+  <link rel="stylesheet" href="styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="container">
+    <!-- Main Menu Screen -->
+    <div id="menuScreen" class="screen active">
+      <div class="title-container">
+        <h1 class="game-title">
+          <span class="title-anime">ANIME</span>
+          <span class="title-death">DEATH</span>
+          <span class="title-battle">BATTLE</span>
+        </h1>
+        <p class="subtitle">⚔️ Spin. Collect. Conquer. ⚔️</p>
+      </div>
+      
+      <div class="menu-buttons">
+        <input type="text" id="playerName" placeholder="Enter your name" maxlength="15" class="name-input">
+        
+        <div class="create-room-options">
+          <label>Room Size:</label>
+          <div class="room-size-buttons">
+            <button class="size-btn active" data-size="2">2 Players</button>
+            <button class="size-btn" data-size="3">3 Players</button>
+            <button class="size-btn" data-size="4">4 Players</button>
+          </div>
+          <label class="checkbox-label">
+            <input type="checkbox" id="publicRoom" checked> Public Room (visible in browser)
+          </label>
+        </div>
+        
+        <button id="createRoomBtn" class="btn btn-primary">🎮 Create Room</button>
+        
+        <div class="divider"><span>OR</span></div>
+        
+        <div class="join-section">
+          <input type="text" id="roomCodeInput" placeholder="Room Code" maxlength="4" class="code-input">
+          <button id="joinRoomBtn" class="btn btn-secondary">Join</button>
+        </div>
+        
+        <button id="browseRoomsBtn" class="btn btn-secondary">🔍 Browse Rooms</button>
+      </div>
+    </div>
+
+    <!-- Room Browser Screen -->
+    <div id="browserScreen" class="screen">
+      <div class="browser-header">
+        <h2>🔍 Active Rooms</h2>
+        <button id="refreshRoomsBtn" class="btn btn-small">🔄 Refresh</button>
+        <button id="backToMenuBtn" class="btn btn-small">← Back</button>
+      </div>
+      
+      <div id="roomsList" class="rooms-list">
+        <p class="no-rooms">Loading rooms...</p>
+      </div>
+    </div>
+
+    <!-- Lobby Screen -->
+    <div id="lobbyScreen" class="screen">
+      <div class="lobby-header">
+        <h2>Room Code: <span id="roomCodeDisplay" class="room-code"></span></h2>
+        <button id="copyCodeBtn" class="btn btn-small">📋 Copy</button>
+      </div>
+      
+      <div class="lobby-info">
+        <span id="playerCountDisplay"></span>
+        <span id="spectatorCountDisplay"></span>
+      </div>
+      
+      <div class="players-list" id="playersList"></div>
+      
+      <div id="spectatorsList" class="spectators-list"></div>
+      
+      <div class="lobby-actions">
+        <p class="waiting-text">Waiting for players...</p>
+        <button id="readyBtn" class="btn btn-primary">✅ Ready!</button>
+      </div>
+      
+      <!-- Chat Box -->
+      <div class="chat-container">
+        <div class="chat-header">💬 Chat</div>
+        <div id="chatMessages" class="chat-messages"></div>
+        <div class="chat-input-container">
+          <input type="text" id="chatInput" placeholder="Type a message..." maxlength="200">
+          <button id="sendChatBtn" class="btn btn-small">Send</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Game Screen (Spinning) -->
+    <div id="gameScreen" class="screen">
+      <div class="game-header">
+        <div id="turnIndicator" class="turn-indicator"></div>
+        <div id="spinsLeft" class="spins-left"></div>
+      </div>
+
+      <div class="roulette-container">
+        <div class="roulette-wheel" id="rouletteWheel">
+          <div class="roulette-items" id="rouletteItems"></div>
+        </div>
+        <div class="roulette-pointer">▼</div>
+      </div>
+
+      <button id="spinBtn" class="btn btn-spin">🎰 SPIN!</button>
+
+      <div class="game-content">
+        <div class="game-left">
+          <div class="team-preview">
+            <h3>Your Team</h3>
+            <div id="myTeam" class="team-cards"></div>
+          </div>
+
+          <div class="all-players-status" id="allPlayersStatus"></div>
+        </div>
+        
+        <div class="game-right">
+          <!-- Chat Box in Game -->
+          <div class="chat-container game-chat">
+            <div class="chat-header">💬 Chat</div>
+            <div id="gameChatMessages" class="chat-messages"></div>
+            <div class="chat-input-container">
+              <input type="text" id="gameChatInput" placeholder="Type a message..." maxlength="200">
+              <button id="gameSendChatBtn" class="btn btn-small">Send</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Battle Screen -->
+    <div id="battleScreen" class="screen">
+      <h2 class="battle-title">⚔️ BATTLE RESULTS ⚔️</h2>
+      
+      <div id="battleArena" class="battle-arena"></div>
+      
+      <div id="winnerAnnouncement" class="winner-announcement"></div>
+      
+      <div class="battle-actions">
+        <button id="shareBtn" class="btn btn-primary">📤 Share Results</button>
+        <button id="rematchBtn" class="btn btn-secondary">🔄 Rematch</button>
+      </div>
+      
+      <!-- Chat Box in Battle -->
+      <div class="chat-container battle-chat">
+        <div class="chat-header">💬 Chat</div>
+        <div id="battleChatMessages" class="chat-messages"></div>
+        <div class="chat-input-container">
+          <input type="text" id="battleChatInput" placeholder="Type a message..." maxlength="200">
+          <button id="battleSendChatBtn" class="btn btn-small">Send</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Spectator Screen -->
+    <div id="spectatorScreen" class="screen">
+      <div class="spectator-banner">👁️ SPECTATING</div>
+      
+      <div id="spectatorContent" class="spectator-content">
+        <!-- Content updates based on game phase -->
+      </div>
+      
+      <!-- Chat Box for Spectators -->
+      <div class="chat-container spectator-chat">
+        <div class="chat-header">💬 Chat</div>
+        <div id="spectatorChatMessages" class="chat-messages"></div>
+        <div class="chat-input-container">
+          <input type="text" id="spectatorChatInput" placeholder="Type a message..." maxlength="200">
+          <button id="spectatorSendChatBtn" class="btn btn-small">Send</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Shared Results Screen -->
+    <div id="resultsScreen" class="screen">
+      <h2 class="battle-title">⚔️ BATTLE RESULTS ⚔️</h2>
+      <div id="sharedBattleArena" class="battle-arena"></div>
+      <div id="sharedWinner" class="winner-announcement"></div>
+      <a href="/" class="btn btn-primary">🎮 Play Now!</a>
+    </div>
+  </div>
+
+  <!-- Toast notification -->
+  <div id="toast" class="toast"></div>
+
+  <!-- Audio effects (optional) -->
+  <audio id="spinSound" preload="auto">
+    <source src="https://assets.mixkit.co/active_storage/sfx/2003/2003-preview.mp3" type="audio/mpeg">
+  </audio>
+  <audio id="winSound" preload="auto">
+    <source src="https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3" type="audio/mpeg">
+  </audio>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
