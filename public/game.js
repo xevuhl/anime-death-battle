@@ -61,6 +61,9 @@ let characters = [];
 let isMyTurn = false;
 let isSpectator = false;
 let selectedMaxPlayers = 4;
+let selectedGameMode = 'classic'; // 'classic', 'survival', 'draft'
+let currentDraftState = null;
+let survivalWave = 1;
 
 // Rarity colors and names for display
 const rarityConfig = {
@@ -79,7 +82,9 @@ const screens = {
   game: document.getElementById('gameScreen'),
   battle: document.getElementById('battleScreen'),
   spectator: document.getElementById('spectatorScreen'),
-  results: document.getElementById('resultsScreen')
+  results: document.getElementById('resultsScreen'),
+  draft: document.getElementById('draftScreen'),
+  survival: document.getElementById('survivalScreen')
 };
 
 // Initialize
@@ -98,7 +103,21 @@ document.addEventListener('DOMContentLoaded', () => {
   
   setupSocketListeners();
   setupEventListeners();
+  setupAudioToggle();
 });
+
+// Setup audio toggle button
+function setupAudioToggle() {
+  const audioToggle = document.getElementById('audioToggle');
+  if (audioToggle && window.audioManager) {
+    audioToggle.addEventListener('click', () => {
+      const enabled = window.audioManager.toggle();
+      audioToggle.classList.toggle('muted', !enabled);
+      audioToggle.textContent = enabled ? '🔊' : '🔇';
+      audioToggle.title = enabled ? 'Mute Sound' : 'Unmute Sound';
+    });
+  }
+}
 
 function setupEventListeners() {
   // Room size buttons
@@ -107,6 +126,24 @@ function setupEventListeners() {
       document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       selectedMaxPlayers = parseInt(btn.dataset.size);
+    });
+  });
+
+  // Game mode buttons
+  document.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedGameMode = btn.dataset.mode;
+      
+      // Update room size options based on mode
+      const sizeButtons = document.querySelector('.room-size-buttons');
+      if (selectedGameMode === 'survival') {
+        sizeButtons.style.display = 'none';
+        selectedMaxPlayers = 1;
+      } else {
+        sizeButtons.style.display = 'flex';
+      }
     });
   });
 
@@ -157,6 +194,8 @@ function setupEventListeners() {
   setupChatInput('gameChatInput', 'gameSendChatBtn');
   setupChatInput('battleChatInput', 'battleSendChatBtn');
   setupChatInput('spectatorChatInput', 'spectatorSendChatBtn');
+  setupChatInput('draftChatInput', 'draftSendChatBtn');
+  setupChatInput('survivalChatInput', 'survivalSendChatBtn');
 }
 
 function setupChatInput(inputId, buttonId) {
@@ -199,20 +238,22 @@ function setupSocketListeners() {
     }
   });
   
-  socket.on('roomCreated', ({ roomCode, players, spectators, maxPlayers }) => {
+  socket.on('roomCreated', ({ roomCode, players, spectators, maxPlayers, gameMode }) => {
     currentRoom = roomCode;
     isSpectator = false;
+    selectedGameMode = gameMode || 'classic';
     showScreen('lobby');
     document.getElementById('roomCodeDisplay').textContent = roomCode;
-    updateLobby(players, spectators, maxPlayers);
+    updateLobby(players, spectators, maxPlayers, gameMode);
   });
   
-  socket.on('joinedRoom', ({ roomCode, players, spectators, maxPlayers, messages }) => {
+  socket.on('joinedRoom', ({ roomCode, players, spectators, maxPlayers, messages, gameMode }) => {
     currentRoom = roomCode;
     isSpectator = false;
+    selectedGameMode = gameMode || 'classic';
     showScreen('lobby');
     document.getElementById('roomCodeDisplay').textContent = roomCode;
-    updateLobby(players, spectators, maxPlayers);
+    updateLobby(players, spectators, maxPlayers, gameMode);
     // Load existing messages
     messages.forEach(msg => addChatMessage(msg));
   });
@@ -228,7 +269,7 @@ function setupSocketListeners() {
   });
   
   socket.on('playerJoined', ({ players, spectators, maxPlayers }) => {
-    updateLobby(players, spectators, maxPlayers);
+    updateLobby(players, spectators, maxPlayers, selectedGameMode);
     showToast('A new player joined!');
   });
   
@@ -241,7 +282,7 @@ function setupSocketListeners() {
     if (isSpectator) {
       updateSpectatorView(players, spectators, 'lobby');
     } else {
-      updateLobby(players, spectators, players.length);
+      updateLobby(players, spectators, players.length, selectedGameMode);
     }
   });
   
@@ -249,7 +290,7 @@ function setupSocketListeners() {
     if (isSpectator) {
       updateSpectatorView(players, spectators, 'lobby');
     } else {
-      updateLobby(players, spectators, 4);
+      updateLobby(players, spectators, 4, selectedGameMode);
     }
     showToast('A player left the room');
   });
@@ -262,8 +303,9 @@ function setupSocketListeners() {
     addChatMessage(message);
   });
   
-  socket.on('gameStart', ({ players, spectators, currentPlayer, characters: chars }) => {
+  socket.on('gameStart', ({ players, spectators, currentPlayer, characters: chars, gameMode }) => {
     characters = chars;
+    selectedGameMode = gameMode || 'classic';
     if (isSpectator) {
       updateSpectatorView(players, spectators, 'spinning');
       setupSpectatorRoulette();
@@ -272,6 +314,32 @@ function setupSocketListeners() {
       setupRoulette();
       updateGameUI(players, currentPlayer);
     }
+  });
+  
+  // Draft mode events
+  socket.on('draftStart', ({ players, spectators, draftState, characters: chars }) => {
+    characters = chars;
+    currentDraftState = draftState;
+    showScreen('draft');
+    setupDraftUI(draftState);
+  });
+  
+  socket.on('draftPicked', ({ playerId, playerName, character, draftState }) => {
+    currentDraftState = draftState;
+    updateDraftUI(draftState);
+    showToast(`${playerName} picked ${character.name}!`);
+  });
+  
+  socket.on('draftNextTurn', ({ draftState }) => {
+    currentDraftState = draftState;
+    updateDraftUI(draftState);
+  });
+  
+  // Survival mode events
+  socket.on('survivalBattleResult', (battleData) => {
+    window.currentBattleData = battleData;
+    survivalWave = battleData.wave;
+    showSurvivalResults(battleData);
   });
   
   socket.on('spinStarted', ({ playerId, targetIndex }) => {
@@ -309,12 +377,14 @@ function setupSocketListeners() {
     }
   });
   
-  socket.on('rematchStarted', ({ players, spectators, maxPlayers }) => {
+  socket.on('rematchStarted', ({ players, spectators, maxPlayers, gameMode }) => {
+    selectedGameMode = gameMode || 'classic';
+    survivalWave = 1;
     if (isSpectator) {
       updateSpectatorView(players, spectators, 'lobby');
     } else {
       showScreen('lobby');
-      updateLobby(players, spectators, maxPlayers);
+      updateLobby(players, spectators, maxPlayers, gameMode);
       document.getElementById('readyBtn').disabled = false;
       document.getElementById('readyBtn').textContent = '✅ Ready!';
     }
@@ -341,8 +411,9 @@ function createRoom() {
   const isPublic = document.getElementById('publicRoom').checked;
   socket.emit('createRoom', { 
     playerName: name, 
-    maxPlayers: selectedMaxPlayers,
-    isPublic 
+    maxPlayers: selectedGameMode === 'survival' ? 1 : selectedMaxPlayers,
+    isPublic,
+    gameMode: selectedGameMode
   });
 }
 
@@ -388,60 +459,9 @@ function copyRoomCode() {
   });
 }
 
-function renderRoomsList(rooms) {
-  const container = document.getElementById('roomsList');
-  
-  if (rooms.length === 0) {
-    container.innerHTML = '<p class="no-rooms">No active rooms. Create one!</p>';
-    return;
-  }
-  
-  container.innerHTML = rooms.map(room => `
-    <div class="room-card">
-      <div class="room-info">
-        <div class="room-host">🎮 ${room.hostName}'s Room</div>
-        <div class="room-details">
-          👥 ${room.playerCount}/${room.maxPlayers} players 
-          ${room.spectatorCount > 0 ? `| 👁️ ${room.spectatorCount} spectators` : ''}
-        </div>
-      </div>
-      <div class="room-actions">
-        ${room.playerCount < room.maxPlayers ? 
-          `<button class="btn btn-primary btn-small" onclick="joinRoomFromBrowser('${room.code}')">Join</button>` : 
-          ''}
-        <button class="btn btn-secondary btn-small" onclick="joinRoomFromBrowser('${room.code}', true)">👁️ Watch</button>
-      </div>
-    </div>
-  `).join('');
-}
+// Old renderRoomsList moved to end of file with game mode support
 
-function updateLobby(players, spectators, maxPlayers) {
-  // Update player count
-  document.getElementById('playerCountDisplay').textContent = `👥 ${players.length}/${maxPlayers} Players`;
-  document.getElementById('spectatorCountDisplay').textContent = `👁️ ${spectators.length} Spectators`;
-  
-  // Update players list
-  const container = document.getElementById('playersList');
-  container.innerHTML = players.map(player => `
-    <div class="player-card ${player.ready ? 'ready' : ''} ${player.id === myPlayerId ? 'is-you' : ''}">
-      <div class="player-name">${player.name} ${player.id === myPlayerId ? '(You)' : ''}</div>
-      <div class="player-status ${player.ready ? 'ready' : ''}">${player.ready ? '✅ Ready' : '⏳ Waiting...'}</div>
-    </div>
-  `).join('');
-  
-  // Update spectators
-  updateSpectatorsList(spectators);
-  
-  // Update waiting text
-  const waitingText = document.querySelector('.waiting-text');
-  if (players.length < 2) {
-    waitingText.textContent = `Waiting for more players... (need at least 2)`;
-  } else if (players.every(p => p.ready)) {
-    waitingText.textContent = 'Starting game...';
-  } else {
-    waitingText.textContent = `${players.filter(p => p.ready).length}/${players.length} players ready`;
-  }
-}
+// Old updateLobby moved to end of file with game mode support
 
 function updateSpectatorsList(spectators) {
   const container = document.getElementById('spectatorsList');
@@ -468,7 +488,7 @@ function addChatMessage(message) {
   `;
   
   // Add to all chat containers
-  ['chatMessages', 'gameChatMessages', 'battleChatMessages', 'spectatorChatMessages'].forEach(id => {
+  ['chatMessages', 'gameChatMessages', 'battleChatMessages', 'spectatorChatMessages', 'draftChatMessages', 'survivalChatMessages'].forEach(id => {
     const container = document.getElementById(id);
     if (container) {
       container.innerHTML += html;
@@ -490,10 +510,12 @@ function setupRoulette() {
   let html = '';
   for (let i = 0; i < 10; i++) {
     characters.forEach(char => {
+      const rarity = char.rarity?.key || 'common';
       html += `
-        <div class="roulette-item" style="color: ${char.color}">
-          <div class="roulette-item-image" style="border-color: ${char.color}">
-            ${characterEmojis[char.name] || '⭐'}
+        <div class="roulette-item ${rarity}" style="color: ${char.color}; --char-color: ${char.color}">
+          <div class="roulette-item-image ${rarity}" style="border-color: ${char.color}">
+            <span class="roulette-emoji">${characterEmojis[char.name] || '⭐'}</span>
+            <div class="roulette-item-glow"></div>
           </div>
           <div class="roulette-item-name">${char.name}</div>
           <div class="roulette-item-anime">${char.anime}</div>
@@ -521,10 +543,12 @@ function setupSpectatorRoulette() {
   let html = '';
   for (let i = 0; i < 10; i++) {
     characters.forEach(char => {
+      const rarity = char.rarity?.key || 'common';
       html += `
-        <div class="roulette-item" style="color: ${char.color}">
-          <div class="roulette-item-image" style="border-color: ${char.color}">
-            ${characterEmojis[char.name] || '⭐'}
+        <div class="roulette-item ${rarity}" style="color: ${char.color}; --char-color: ${char.color}">
+          <div class="roulette-item-image ${rarity}" style="border-color: ${char.color}">
+            <span class="roulette-emoji">${characterEmojis[char.name] || '⭐'}</span>
+            <div class="roulette-item-glow"></div>
           </div>
           <div class="roulette-item-name">${char.name}</div>
           <div class="roulette-item-anime">${char.anime}</div>
@@ -616,13 +640,14 @@ function updateMyTeam(myCharacters) {
     const rarityStyle = rarityConfig[rarity.key] || rarityConfig.common;
     const isLegendary = rarity.key === 'legendary';
     const isEpic = rarity.key === 'epic';
+    const charEmoji = characterEmojis[char.name] || '⭐';
     
     return `
       <div class="character-card ${isLegendary ? 'legendary' : ''} ${isEpic ? 'epic' : ''}" 
-           style="border-color: ${rarityStyle.color}; box-shadow: ${rarityStyle.glow}">
+           style="border-color: ${rarityStyle.color}; box-shadow: ${rarityStyle.glow}; --char-color: ${char.color}">
         <div class="rarity-badge" style="background: ${rarityStyle.color}">${rarity.name}</div>
         <div class="character-card-image" style="border-color: ${rarityStyle.color}">
-          ${characterEmojis[char.name] || '⭐'}
+          <span class="character-card-emoji">${charEmoji}</span>
         </div>
         <div class="character-card-name">${char.name}</div>
         <div class="character-card-anime">${char.anime}</div>
@@ -630,6 +655,13 @@ function updateMyTeam(myCharacters) {
       </div>
     `;
   }).join('');
+  
+  // Play reveal sound for rarity
+  if (window.audioManager && myCharacters.length > 0) {
+    const lastChar = myCharacters[myCharacters.length - 1];
+    const rarity = lastChar.rarity?.key || 'common';
+    window.audioManager.playCharacterReveal(rarity);
+  }
   
   // Show synergy preview
   updateSynergyPreview(myCharacters);
@@ -707,11 +739,15 @@ function spin() {
   if (!isMyTurn) return;
   socket.emit('spin');
   
-  // Play sound
-  try {
-    document.getElementById('spinSound').currentTime = 0;
-    document.getElementById('spinSound').play();
-  } catch (e) {}
+  // Play sound through audio manager or fallback
+  if (window.audioManager) {
+    window.audioManager.play('spin');
+  } else {
+    try {
+      document.getElementById('spinSound').currentTime = 0;
+      document.getElementById('spinSound').play();
+    } catch (e) {}
+  }
 }
 
 function animateRoulette(targetIndex) {
@@ -749,15 +785,32 @@ function animateRoulette(targetIndex) {
 function showBattleResults(battleData) {
   showScreen('battle');
   
+  const showdownContainer = document.getElementById('battleShowdown');
   const arena = document.getElementById('battleArena');
   const winnerSection = document.getElementById('winnerAnnouncement');
   
-  // Play win sound
-  try {
-    document.getElementById('winSound').play();
-  } catch (e) {}
-  
-  renderBattleArena(arena, winnerSection, battleData);
+  // Play battle animation with sound
+  if (window.battleAnimator && battleData.players.length >= 2) {
+    // Show animated showdown first
+    window.playBattleShowdown(battleData, 'battleShowdown').then(() => {
+      // After animation, render full battle arena
+      renderBattleArena(arena, winnerSection, battleData);
+    });
+    
+    // Play battle sounds through audio manager
+    if (window.audioManager) {
+      window.audioManager.playBattleSequence();
+    }
+  } else {
+    // Fallback: just render arena
+    if (showdownContainer) showdownContainer.innerHTML = '';
+    renderBattleArena(arena, winnerSection, battleData);
+    
+    // Play win sound
+    try {
+      document.getElementById('winSound').play();
+    } catch (e) {}
+  }
 }
 
 function showSpectatorBattleResults(battleData) {
@@ -765,6 +818,7 @@ function showSpectatorBattleResults(battleData) {
   
   content.innerHTML = `
     <h2 class="battle-title">⚔️ BATTLE RESULTS ⚔️</h2>
+    <div id="spectatorBattleShowdown" class="battle-showdown"></div>
     <div id="spectatorBattleArena" class="battle-arena"></div>
     <div id="spectatorWinnerAnnouncement" class="winner-announcement"></div>
   `;
@@ -772,11 +826,22 @@ function showSpectatorBattleResults(battleData) {
   const arena = document.getElementById('spectatorBattleArena');
   const winnerSection = document.getElementById('spectatorWinnerAnnouncement');
   
-  renderBattleArena(arena, winnerSection, battleData);
+  // Play animated showdown for spectators too
+  if (window.battleAnimator && battleData.players.length >= 2) {
+    window.playBattleShowdown(battleData, 'spectatorBattleShowdown').then(() => {
+      renderBattleArena(arena, winnerSection, battleData);
+    });
+    
+    if (window.audioManager) {
+      window.audioManager.playBattleSequence();
+    }
+  } else {
+    renderBattleArena(arena, winnerSection, battleData);
+  }
 }
 
 function renderBattleArena(arena, winnerSection, battleData) {
-  // Build battle arena
+  // Build battle arena with enhanced visuals
   arena.innerHTML = battleData.players.map((player, index) => {
     const isWinner = index === 0;
     const rank = index === 0 ? '🥇 1st' : index === 1 ? '🥈 2nd' : index === 2 ? '🥉 3rd' : `${index + 1}th`;
@@ -790,14 +855,15 @@ function renderBattleArena(arena, winnerSection, battleData) {
           ${player.characters.map(char => {
             const rarity = char.rarity || { key: 'common', name: 'Common', color: '#9CA3AF' };
             const rarityStyle = rarityConfig[rarity.key] || rarityConfig.common;
+            const charEmoji = characterEmojis[char.name] || '⭐';
             return `
-              <div class="battle-char ${rarity.key === 'legendary' ? 'legendary' : ''} ${rarity.key === 'epic' ? 'epic' : ''}">
+              <div class="battle-char ${rarity.key === 'legendary' ? 'legendary' : ''} ${rarity.key === 'epic' ? 'epic' : ''}" style="--char-color: ${char.color}">
                 <div class="battle-char-rarity" style="background: ${rarityStyle.color}">${rarity.name}</div>
                 <div class="battle-char-icon" style="border-color: ${rarityStyle.color}; box-shadow: ${rarityStyle.glow}">
-                  ${characterEmojis[char.name] || '⭐'}
+                  <span class="battle-char-emoji">${charEmoji}</span>
                 </div>
                 <div class="battle-char-name">${char.name}</div>
-                <div class="battle-char-power">⚡${char.power}</div>
+                <div class="battle-char-power">⚡${char.power.toLocaleString()}</div>
               </div>
             `;
           }).join('')}
@@ -901,9 +967,12 @@ function leaveRoom() {
   isSpectator = false;
   isMyTurn = false;
   characters = [];
+  selectedGameMode = 'classic';
+  currentDraftState = null;
+  survivalWave = 1;
   
   // Clear chat messages
-  ['chatMessages', 'gameChatMessages', 'battleChatMessages', 'spectatorChatMessages'].forEach(id => {
+  ['chatMessages', 'gameChatMessages', 'battleChatMessages', 'spectatorChatMessages', 'draftChatMessages', 'survivalChatMessages'].forEach(id => {
     const container = document.getElementById(id);
     if (container) container.innerHTML = '';
   });
@@ -922,3 +991,310 @@ function leaveRoom() {
 
 // Make function available globally for onclick handlers
 window.joinRoomFromBrowser = joinRoomFromBrowser;
+
+// =============================================
+// DRAFT MODE FUNCTIONS
+// =============================================
+
+function setupDraftUI(draftState) {
+  const draftScreen = document.getElementById('draftScreen');
+  if (!draftScreen) return;
+  
+  updateDraftUI(draftState);
+}
+
+function updateDraftUI(draftState) {
+  const isMyDraftTurn = draftState.currentDrafter === myPlayerId;
+  
+  // Update turn indicator
+  const turnIndicator = document.getElementById('draftTurnIndicator');
+  if (turnIndicator) {
+    if (isMyDraftTurn) {
+      turnIndicator.textContent = "🎯 YOUR TURN TO PICK!";
+      turnIndicator.className = 'turn-indicator your-turn';
+    } else {
+      turnIndicator.textContent = `⏳ ${draftState.currentDrafterName}'s turn to pick`;
+      turnIndicator.className = 'turn-indicator';
+    }
+  }
+  
+  // Update round info
+  const roundInfo = document.getElementById('draftRoundInfo');
+  if (roundInfo) {
+    roundInfo.textContent = `Round ${draftState.draftRound} | Pick ${draftState.picksPerPlayer - (draftState.players.find(p => p.id === myPlayerId)?.picksLeft || 0) + 1}/${draftState.picksPerPlayer}`;
+  }
+  
+  // Update available pool
+  const poolContainer = document.getElementById('draftPool');
+  if (poolContainer) {
+    poolContainer.innerHTML = draftState.availablePool.map(char => {
+      const rarityStyle = rarityConfig[char.rarity?.key] || rarityConfig.common;
+      const isClickable = isMyDraftTurn;
+      
+      return `
+        <div class="draft-char ${isClickable ? 'clickable' : 'disabled'} ${char.rarity?.key || 'common'}" 
+             style="border-color: ${rarityStyle.color}; box-shadow: ${rarityStyle.glow}"
+             ${isClickable ? `onclick="draftPick(${char.id})"` : ''}>
+          <div class="rarity-badge" style="background: ${rarityStyle.color}">${char.rarity?.name || 'Common'}</div>
+          <div class="draft-char-icon">
+            ${characterEmojis[char.name] || '⭐'}
+          </div>
+          <div class="draft-char-name">${char.name}</div>
+          <div class="draft-char-anime">${char.anime}</div>
+          <div class="draft-char-power">⚡ ${char.power.toLocaleString()}</div>
+        </div>
+      `;
+    }).join('');
+  }
+  
+  // Update all players' picks
+  const playersContainer = document.getElementById('draftPlayers');
+  if (playersContainer) {
+    playersContainer.innerHTML = draftState.players.map(player => `
+      <div class="draft-player ${player.id === draftState.currentDrafter ? 'current-turn' : ''} ${player.id === myPlayerId ? 'is-you' : ''}">
+        <div class="draft-player-name">${player.name} ${player.id === myPlayerId ? '(You)' : ''}</div>
+        <div class="draft-player-picks-left">Picks left: ${player.picksLeft}</div>
+        <div class="draft-player-chars">
+          ${player.characters.length > 0 ? player.characters.map(char => {
+            const rarityStyle = rarityConfig[char.rarity?.key] || rarityConfig.common;
+            return `
+              <div class="mini-char ${char.rarity?.key}" style="border-color: ${rarityStyle.color}; box-shadow: ${rarityStyle.glow}" title="${char.name} (${char.rarity?.name})">
+                ${characterEmojis[char.name] || '⭐'}
+              </div>
+            `;
+          }).join('') : '<span style="opacity: 0.5; font-size: 0.8rem">No picks yet</span>'}
+        </div>
+      </div>
+    `).join('');
+  }
+}
+
+function draftPick(characterId) {
+  socket.emit('draftPick', { characterId });
+}
+
+window.draftPick = draftPick;
+
+// =============================================
+// SURVIVAL MODE FUNCTIONS
+// =============================================
+
+function showSurvivalResults(battleData) {
+  showScreen('survival');
+  
+  const survivalScreen = document.getElementById('survivalScreen');
+  if (!survivalScreen) return;
+  
+  const arena = document.getElementById('survivalArena');
+  const resultSection = document.getElementById('survivalResult');
+  const actionsSection = document.getElementById('survivalActions');
+  
+  if (!arena || !resultSection || !actionsSection) return;
+  
+  // Play appropriate sound
+  try {
+    if (battleData.playerWins) {
+      document.getElementById('winSound').play();
+    }
+  } catch (e) {}
+  
+  // Build arena showing player vs AI
+  arena.innerHTML = `
+    <div class="survival-header">
+      <div class="wave-info">
+        <div class="wave-number">WAVE ${battleData.wave}</div>
+        <div class="wave-difficulty ${battleData.difficulty.toLowerCase()}">${battleData.difficulty}</div>
+      </div>
+    </div>
+    
+    <div class="survival-battle">
+      <!-- Player Side -->
+      <div class="survival-combatant player-side ${battleData.playerWins ? 'winner' : 'loser'}">
+        <div class="combatant-label">YOUR TEAM</div>
+        <div class="combatant-chars">
+          ${battleData.player.characters.map(char => {
+            const rarity = char.rarity || { key: 'common', name: 'Common' };
+            const rarityStyle = rarityConfig[rarity.key] || rarityConfig.common;
+            return `
+              <div class="battle-char ${rarity.key === 'legendary' ? 'legendary' : ''}" style="border-color: ${rarityStyle.color}">
+                <div class="battle-char-icon">${characterEmojis[char.name] || '⭐'}</div>
+                <div class="battle-char-name">${char.name}</div>
+                <div class="battle-char-power">⚡${char.power}</div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+        <div class="combatant-power">
+          <div class="power-breakdown">
+            <span>Base: ⚡${battleData.player.basePower.toLocaleString()}</span>
+            ${battleData.player.synergyBonus > 0 ? `<span class="synergy-bonus">+${battleData.player.synergyBonus.toLocaleString()} synergy</span>` : ''}
+          </div>
+          <div class="total-power">⚡ ${battleData.player.totalPower.toLocaleString()}</div>
+        </div>
+      </div>
+      
+      <!-- VS -->
+      <div class="survival-vs">
+        <span class="vs-text">VS</span>
+      </div>
+      
+      <!-- AI Side -->
+      <div class="survival-combatant ai-side ${!battleData.playerWins ? 'winner' : 'loser'}">
+        <div class="combatant-label">${battleData.ai.name}</div>
+        <div class="combatant-chars">
+          ${battleData.ai.characters.map(char => {
+            const rarity = char.rarity || { key: 'common', name: 'Common' };
+            const rarityStyle = rarityConfig[rarity.key] || rarityConfig.common;
+            return `
+              <div class="battle-char ${rarity.key === 'legendary' ? 'legendary' : ''}" style="border-color: ${rarityStyle.color}">
+                <div class="battle-char-icon">${characterEmojis[char.name] || '⭐'}</div>
+                <div class="battle-char-name">${char.name}</div>
+                <div class="battle-char-power">⚡${char.power}</div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+        <div class="combatant-power">
+          <div class="power-breakdown">
+            <span>Scaled Power (${Math.round(battleData.ai.scaling * 100)}%)</span>
+          </div>
+          <div class="total-power">⚡ ${battleData.ai.totalPower.toLocaleString()}</div>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  // Show result
+  if (battleData.playerWins) {
+    resultSection.innerHTML = `
+      <div class="survival-victory">
+        <div class="result-icon">🏆</div>
+        <div class="result-text">VICTORY!</div>
+        <div class="result-sub">You defeated Wave ${battleData.wave}!</div>
+      </div>
+    `;
+    actionsSection.innerHTML = `
+      <button id="survivalContinueBtn" class="btn btn-primary btn-large">⚔️ Continue to Wave ${battleData.nextWave}</button>
+      <button id="survivalShareBtn" class="btn btn-secondary">📤 Share</button>
+      <button id="survivalRematchBtn" class="btn btn-secondary">🔄 New Run</button>
+      <button id="survivalLeaveBtn" class="btn btn-secondary">🚪 Leave</button>
+    `;
+    
+    // Add event listeners
+    document.getElementById('survivalContinueBtn').addEventListener('click', () => {
+      socket.emit('survivalContinue');
+    });
+  } else {
+    resultSection.innerHTML = `
+      <div class="survival-defeat">
+        <div class="result-icon">💀</div>
+        <div class="result-text">DEFEATED!</div>
+        <div class="result-sub">You reached Wave ${battleData.wave}</div>
+        <div class="final-score">Final Score: ${battleData.wave - 1} waves cleared</div>
+      </div>
+    `;
+    actionsSection.innerHTML = `
+      <button id="survivalShareBtn" class="btn btn-primary">📤 Share Results</button>
+      <button id="survivalRematchBtn" class="btn btn-secondary">🔄 Try Again</button>
+      <button id="survivalLeaveBtn" class="btn btn-secondary">🚪 Leave</button>
+    `;
+  }
+  
+  // Common event listeners
+  document.getElementById('survivalShareBtn')?.addEventListener('click', shareResults);
+  document.getElementById('survivalRematchBtn')?.addEventListener('click', () => {
+    socket.emit('requestRematch');
+  });
+  document.getElementById('survivalLeaveBtn')?.addEventListener('click', leaveRoom);
+}
+
+// =============================================
+// UPDATE LOBBY FOR GAME MODES
+// =============================================
+
+function updateLobby(players, spectators, maxPlayers, gameMode) {
+  // Update player count
+  const modeText = gameMode === 'survival' ? '(Solo)' : gameMode === 'draft' ? '(Draft)' : '';
+  document.getElementById('playerCountDisplay').textContent = `👥 ${players.length}/${maxPlayers} Players ${modeText}`;
+  document.getElementById('spectatorCountDisplay').textContent = `👁️ ${spectators.length} Spectators`;
+  
+  // Show game mode badge
+  const lobbyHeader = document.querySelector('.lobby-header');
+  let modeBadge = document.getElementById('gameModeBadge');
+  if (!modeBadge && lobbyHeader) {
+    modeBadge = document.createElement('div');
+    modeBadge.id = 'gameModeBadge';
+    modeBadge.className = 'game-mode-badge';
+    lobbyHeader.appendChild(modeBadge);
+  }
+  if (modeBadge) {
+    const modeConfig = {
+      classic: { icon: '🎰', name: 'Classic', color: '#22C55E' },
+      survival: { icon: '💀', name: 'Survival', color: '#EF4444' },
+      draft: { icon: '📋', name: 'Draft', color: '#3B82F6' }
+    };
+    const mode = modeConfig[gameMode] || modeConfig.classic;
+    modeBadge.innerHTML = `<span style="color: ${mode.color}">${mode.icon} ${mode.name} Mode</span>`;
+  }
+  
+  // Update players list
+  const container = document.getElementById('playersList');
+  container.innerHTML = players.map(player => `
+    <div class="player-card ${player.ready ? 'ready' : ''} ${player.id === myPlayerId ? 'is-you' : ''}">
+      <div class="player-name">${player.name} ${player.id === myPlayerId ? '(You)' : ''}</div>
+      <div class="player-status ${player.ready ? 'ready' : ''}">${player.ready ? '✅ Ready' : '⏳ Waiting...'}</div>
+    </div>
+  `).join('');
+  
+  // Update spectators
+  updateSpectatorsList(spectators);
+  
+  // Update waiting text based on game mode
+  const waitingText = document.querySelector('.waiting-text');
+  const minPlayers = gameMode === 'survival' ? 1 : 2;
+  
+  if (players.length < minPlayers) {
+    waitingText.textContent = gameMode === 'survival' 
+      ? 'Click Ready to start your survival run!' 
+      : `Waiting for more players... (need at least ${minPlayers})`;
+  } else if (players.every(p => p.ready)) {
+    waitingText.textContent = 'Starting game...';
+  } else {
+    waitingText.textContent = `${players.filter(p => p.ready).length}/${players.length} players ready`;
+  }
+}
+
+// Update rooms list to show game mode
+function renderRoomsList(rooms) {
+  const container = document.getElementById('roomsList');
+  
+  if (rooms.length === 0) {
+    container.innerHTML = '<p class="no-rooms">No active rooms. Create one!</p>';
+    return;
+  }
+  
+  const modeIcons = {
+    classic: '🎰',
+    survival: '💀',
+    draft: '📋'
+  };
+  
+  container.innerHTML = rooms.map(room => `
+    <div class="room-card">
+      <div class="room-info">
+        <div class="room-host">${modeIcons[room.gameMode] || '🎮'} ${room.hostName}'s Room</div>
+        <div class="room-mode">${(room.gameMode || 'classic').charAt(0).toUpperCase() + (room.gameMode || 'classic').slice(1)} Mode</div>
+        <div class="room-details">
+          👥 ${room.playerCount}/${room.maxPlayers} players 
+          ${room.spectatorCount > 0 ? `| 👁️ ${room.spectatorCount} spectators` : ''}
+        </div>
+      </div>
+      <div class="room-actions">
+        ${room.playerCount < room.maxPlayers ? 
+          `<button class="btn btn-primary btn-small" onclick="joinRoomFromBrowser('${room.code}')">Join</button>` : 
+          ''}
+        <button class="btn btn-secondary btn-small" onclick="joinRoomFromBrowser('${room.code}', true)">👁️ Watch</button>
+      </div>
+    </div>
+  `).join('');
+}

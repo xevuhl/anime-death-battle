@@ -8,6 +8,8 @@ const path = require('path');
 // Import game modules
 const { selectRandomCharacter, characters } = require('./game/roulette');
 const { calculateBattle } = require('./game/battle');
+const { calculateSurvivalBattle, getDifficultyInfo } = require('./game/survival');
+const { generateDraftPool, draftCharacter, getNextDrafter, isDraftComplete, getDraftState, PICKS_PER_PLAYER } = require('./game/draft');
 const initApiRoutes = require('./routes/api');
 
 const app = express();
@@ -52,7 +54,8 @@ io.on('connection', (socket) => {
           hostName: room.players[0]?.name || 'Unknown',
           playerCount: room.players.length,
           maxPlayers: room.maxPlayers,
-          spectatorCount: room.spectators.length
+          spectatorCount: room.spectators.length,
+          gameMode: room.gameMode || 'classic'
         });
       }
     });
@@ -60,13 +63,14 @@ io.on('connection', (socket) => {
   });
 
   // Create a new room
-  socket.on('createRoom', ({ playerName, maxPlayers, isPublic }) => {
+  socket.on('createRoom', ({ playerName, maxPlayers, isPublic, gameMode }) => {
     const roomCode = generateRoomCode();
     const room = {
       code: roomCode,
       host: socket.id,
       maxPlayers: maxPlayers || 4,
       isPublic: isPublic !== false,
+      gameMode: gameMode || 'classic', // 'classic', 'survival', 'draft'
       players: [{
         id: socket.id,
         name: playerName,
@@ -78,7 +82,13 @@ io.on('connection', (socket) => {
       spectators: [],
       phase: 'lobby',
       currentPlayerIndex: 0,
-      messages: []
+      messages: [],
+      // Survival mode specific
+      survivalWave: 1,
+      survivalScore: 0,
+      // Draft mode specific
+      draftPool: [],
+      draftRound: 1
     };
     
     rooms.set(roomCode, room);
@@ -89,10 +99,11 @@ io.on('connection', (socket) => {
       roomCode, 
       players: room.players,
       spectators: room.spectators,
-      maxPlayers: room.maxPlayers 
+      maxPlayers: room.maxPlayers,
+      gameMode: room.gameMode
     });
     io.emit('roomsUpdated');
-    console.log(`Room ${roomCode} created by ${playerName}`);
+    console.log(`Room ${roomCode} created by ${playerName} (${room.gameMode} mode)`);
   });
 
   // Join existing room
@@ -137,7 +148,8 @@ io.on('connection', (socket) => {
       players: room.players,
       spectators: room.spectators,
       maxPlayers: room.maxPlayers,
-      messages: room.messages.slice(-50)
+      messages: room.messages.slice(-50),
+      gameMode: room.gameMode
     });
     io.emit('roomsUpdated');
     console.log(`${playerName} joined room ${roomCode}`);
@@ -216,16 +228,48 @@ io.on('connection', (socket) => {
         spectators: room.spectators
       });
 
-      // Check if all ready (need at least 2 players)
-      if (room.players.length >= 2 && room.players.every(p => p.ready)) {
-        room.phase = 'spinning';
-        room.currentPlayerIndex = 0;
-        io.to(socket.roomCode).emit('gameStart', { 
-          players: room.players,
-          spectators: room.spectators,
-          currentPlayer: room.players[0].id,
-          characters
-        });
+      // Check if all ready (need at least 2 players for classic/draft, 1 for survival)
+      const minPlayers = room.gameMode === 'survival' ? 1 : 2;
+      if (room.players.length >= minPlayers && room.players.every(p => p.ready)) {
+        
+        if (room.gameMode === 'draft') {
+          // Start draft mode
+          room.phase = 'drafting';
+          room.draftPool = generateDraftPool(room.players.length);
+          room.currentPlayerIndex = 0;
+          room.draftRound = 1;
+          
+          io.to(socket.roomCode).emit('draftStart', {
+            players: room.players,
+            spectators: room.spectators,
+            draftState: getDraftState(room),
+            characters
+          });
+        } else if (room.gameMode === 'survival') {
+          // Start survival mode - go straight to spinning for character selection
+          room.phase = 'spinning';
+          room.currentPlayerIndex = 0;
+          room.survivalWave = 1;
+          
+          io.to(socket.roomCode).emit('gameStart', { 
+            players: room.players,
+            spectators: room.spectators,
+            currentPlayer: room.players[0].id,
+            characters,
+            gameMode: 'survival'
+          });
+        } else {
+          // Classic mode
+          room.phase = 'spinning';
+          room.currentPlayerIndex = 0;
+          io.to(socket.roomCode).emit('gameStart', { 
+            players: room.players,
+            spectators: room.spectators,
+            currentPlayer: room.players[0].id,
+            characters,
+            gameMode: 'classic'
+          });
+        }
         io.emit('roomsUpdated');
       }
     }
@@ -239,8 +283,16 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.id === socket.id);
     const currentPlayer = room.players[room.currentPlayerIndex];
     
-    if (!player || player.id !== currentPlayer.id || player.spinsLeft <= 0 || player.isSpinning) {
-      return;
+    // In survival mode, only check if it's a player in the room with spins left
+    if (room.gameMode === 'survival') {
+      if (!player || player.spinsLeft <= 0 || player.isSpinning) {
+        return;
+      }
+    } else {
+      // Classic mode - must be current player's turn
+      if (!player || player.id !== currentPlayer.id || player.spinsLeft <= 0 || player.isSpinning) {
+        return;
+      }
     }
 
     player.isSpinning = true;
@@ -267,55 +319,182 @@ io.on('connection', (socket) => {
         players: room.players
       });
 
-      // Next turn logic
-      if (player.spinsLeft === 0) {
-        room.currentPlayerIndex++;
-        
-        if (room.currentPlayerIndex >= room.players.length) {
-          room.currentPlayerIndex = 0;
-        }
-        
-        // Find next player with spins
-        let checked = 0;
-        while (room.players[room.currentPlayerIndex].spinsLeft === 0 && checked < room.players.length) {
-          room.currentPlayerIndex = (room.currentPlayerIndex + 1) % room.players.length;
-          checked++;
-        }
-
-        // All spins done = battle
-        if (room.players.every(p => p.spinsLeft === 0)) {
-          room.phase = 'battle';
-          const battleData = calculateBattle(room);
+      // Handle survival mode differently
+      if (room.gameMode === 'survival') {
+        // In survival, player spins all 3, then battles AI
+        if (player.spinsLeft === 0) {
+          room.phase = 'survival_battle';
+          
+          // Calculate survival battle
+          const battleData = calculateSurvivalBattle(player.characters, room.survivalWave);
           const resultId = uuidv4();
+          
           battleResults.set(resultId, {
             ...battleData,
             timestamp: new Date().toISOString(),
-            roomCode: socket.roomCode
+            roomCode: socket.roomCode,
+            gameMode: 'survival'
           });
           
-          io.to(socket.roomCode).emit('battleStart', {
+          io.to(socket.roomCode).emit('survivalBattleResult', {
             ...battleData,
             shareId: resultId
           });
+        } else {
+          io.to(socket.roomCode).emit('nextTurn', {
+            currentPlayer: player.id,
+            players: room.players,
+            gameMode: 'survival'
+          });
+        }
+      } else {
+        // Classic mode - next turn logic
+        if (player.spinsLeft === 0) {
+          room.currentPlayerIndex++;
+          
+          if (room.currentPlayerIndex >= room.players.length) {
+            room.currentPlayerIndex = 0;
+          }
+          
+          // Find next player with spins
+          let checked = 0;
+          while (room.players[room.currentPlayerIndex].spinsLeft === 0 && checked < room.players.length) {
+            room.currentPlayerIndex = (room.currentPlayerIndex + 1) % room.players.length;
+            checked++;
+          }
+
+          // All spins done = battle
+          if (room.players.every(p => p.spinsLeft === 0)) {
+            room.phase = 'battle';
+            const battleData = calculateBattle(room);
+            const resultId = uuidv4();
+            battleResults.set(resultId, {
+              ...battleData,
+              timestamp: new Date().toISOString(),
+              roomCode: socket.roomCode
+            });
+            
+            io.to(socket.roomCode).emit('battleStart', {
+              ...battleData,
+              shareId: resultId
+            });
+          } else {
+            io.to(socket.roomCode).emit('nextTurn', {
+              currentPlayer: room.players[room.currentPlayerIndex].id,
+              players: room.players
+            });
+          }
         } else {
           io.to(socket.roomCode).emit('nextTurn', {
             currentPlayer: room.players[room.currentPlayerIndex].id,
             players: room.players
           });
         }
-      } else {
-        io.to(socket.roomCode).emit('nextTurn', {
-          currentPlayer: room.players[room.currentPlayerIndex].id,
-          players: room.players
-        });
       }
     }, 4000);
+  });
+
+  // Draft pick (for draft mode)
+  socket.on('draftPick', ({ characterId }) => {
+    const room = rooms.get(socket.roomCode);
+    if (!room || room.phase !== 'drafting') return;
+    
+    const player = room.players.find(p => p.id === socket.id);
+    const currentDrafter = room.players[room.currentPlayerIndex];
+    
+    if (!player || player.id !== currentDrafter.id) {
+      socket.emit('error', { message: "It's not your turn to pick!" });
+      return;
+    }
+    
+    // Check if player already has max picks
+    if (player.characters.length >= PICKS_PER_PLAYER) {
+      socket.emit('error', { message: "You've already picked all your characters!" });
+      return;
+    }
+    
+    // Draft the character
+    const result = draftCharacter(room.draftPool, characterId, socket.id);
+    
+    if (!result.success) {
+      socket.emit('error', { message: result.error });
+      return;
+    }
+    
+    player.characters.push(result.character);
+    
+    io.to(socket.roomCode).emit('draftPicked', {
+      playerId: socket.id,
+      playerName: player.name,
+      character: result.character,
+      draftState: getDraftState(room)
+    });
+    
+    // Check if draft is complete
+    if (isDraftComplete(room.players)) {
+      room.phase = 'battle';
+      const battleData = calculateBattle(room);
+      const resultId = uuidv4();
+      
+      battleResults.set(resultId, {
+        ...battleData,
+        timestamp: new Date().toISOString(),
+        roomCode: socket.roomCode,
+        gameMode: 'draft'
+      });
+      
+      setTimeout(() => {
+        io.to(socket.roomCode).emit('battleStart', {
+          ...battleData,
+          shareId: resultId,
+          gameMode: 'draft'
+        });
+      }, 1000);
+    } else {
+      // Move to next drafter (snake draft)
+      const next = getNextDrafter(room.currentPlayerIndex, room.players.length, room.draftRound);
+      room.currentPlayerIndex = next.index;
+      room.draftRound = next.round;
+      
+      io.to(socket.roomCode).emit('draftNextTurn', {
+        draftState: getDraftState(room)
+      });
+    }
+  });
+
+  // Continue survival (after winning a wave)
+  socket.on('survivalContinue', () => {
+    const room = rooms.get(socket.roomCode);
+    if (!room || room.gameMode !== 'survival' || room.phase !== 'survival_battle') return;
+    
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player) return;
+    
+    // Increase wave
+    room.survivalWave++;
+    room.phase = 'survival_battle';
+    
+    // Battle next wave (keep the same team)
+    const battleData = calculateSurvivalBattle(player.characters, room.survivalWave);
+    const resultId = uuidv4();
+    
+    battleResults.set(resultId, {
+      ...battleData,
+      timestamp: new Date().toISOString(),
+      roomCode: socket.roomCode,
+      gameMode: 'survival'
+    });
+    
+    io.to(socket.roomCode).emit('survivalBattleResult', {
+      ...battleData,
+      shareId: resultId
+    });
   });
 
   // Rematch request
   socket.on('requestRematch', () => {
     const room = rooms.get(socket.roomCode);
-    if (!room || room.phase !== 'battle') return;
+    if (!room || (room.phase !== 'battle' && room.phase !== 'survival_battle')) return;
 
     // Reset all players
     room.players.forEach(player => {
@@ -327,11 +506,16 @@ io.on('connection', (socket) => {
     
     room.phase = 'lobby';
     room.currentPlayerIndex = 0;
+    room.draftPool = [];
+    room.draftRound = 1;
+    room.survivalWave = 1;
+    room.survivalScore = 0;
     
     io.to(socket.roomCode).emit('rematchStarted', { 
       players: room.players,
       spectators: room.spectators,
-      maxPlayers: room.maxPlayers
+      maxPlayers: room.maxPlayers,
+      gameMode: room.gameMode
     });
   });
 

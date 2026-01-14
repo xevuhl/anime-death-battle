@@ -13,7 +13,9 @@ anime-death-battle/
 │   ├── game/
 │   │   ├── Room.js           # Room management (create, join, leave)
 │   │   ├── battle.js         # Battle calculation with synergies
-│   │   └── roulette.js       # Weighted character selection
+│   │   ├── roulette.js       # Weighted character selection
+│   │   ├── survival.js       # Survival mode AI & wave system
+│   │   └── draft.js          # Draft mode pool & pick system
 │   └── routes/
 │       └── api.js            # REST API endpoints
 │
@@ -29,7 +31,7 @@ anime-death-battle/
 │       ├── config.js         # Client-side constants (emojis, rarities)
 │       ├── socket.js         # Socket.IO event handlers
 │       ├── ui.js             # Screen management & rendering
-│       ├── game.js           # Game logic (spin, battle)
+│       ├── game.js           # Game logic (spin, battle, draft, survival)
 │       └── utils.js          # Helper functions (toast, copy, etc.)
 │
 ├── docs/
@@ -42,7 +44,30 @@ anime-death-battle/
 
 ## 🎮 Core Features
 
-### 1. Multiplayer Rooms
+### 1. Game Modes
+Three exciting game modes to choose from:
+
+#### Classic Mode (🎰)
+- Spin for random characters
+- Turn-based play against other players
+- Synergy bonuses for same-anime characters
+
+#### Survival Mode (💀)
+- **Location**: `server/game/survival.js`
+- Solo experience against AI
+- Keep your team and face increasingly harder AI opponents
+- 10 difficulty waves (Rookie → Godlike)
+- AI teams scale based on player power
+- Track your highest wave reached
+
+#### Draft Mode (📋)
+- **Location**: `server/game/draft.js`
+- Snake draft picking system
+- Take turns selecting from a shared pool
+- Strategic character selection
+- 3 picks per player
+
+### 2. Multiplayer Rooms
 - **Location**: `server/game/Room.js`
 - 2-4 players per room
 - Spectator support
@@ -98,6 +123,8 @@ anime-death-battle/
 | `chatMessage` | Send chat message |
 | `requestRematch` | Request rematch |
 | `leaveRoom` | Leave current room |
+| `draftPick` | Pick character in draft mode |
+| `survivalContinue` | Continue to next survival wave |
 
 ### Server → Client
 | Event | Description |
@@ -109,6 +136,10 @@ anime-death-battle/
 | `spinResult` | Character obtained |
 | `battleStart` | Battle results ready |
 | `newMessage` | Chat message received |
+| `draftStart` | Draft mode begins |
+| `draftPicked` | Character drafted |
+| `draftNextTurn` | Next drafter's turn |
+| `survivalBattleResult` | Survival wave results |
 
 ## 📝 Making Changes
 

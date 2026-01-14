@@ -11,6 +11,11 @@
 </head>
 <body>
   <div class="container">
+    <!-- Audio Toggle Button -->
+    <button id="audioToggle" class="audio-toggle" title="Toggle Sound">
+      🔊
+    </button>
+    
     <!-- Main Menu Screen -->
     <div id="menuScreen" class="screen active">
       <div class="title-container">
@@ -26,6 +31,16 @@
         <input type="text" id="playerName" placeholder="Enter your name" maxlength="15" class="name-input">
         
         <div class="create-room-options">
+          <label>Game Mode:</label>
+          <div class="game-mode-buttons">
+            <button class="mode-btn active" data-mode="classic">🎰 Classic</button>
+            <button class="mode-btn" data-mode="survival">💀 Survival</button>
+            <button class="mode-btn" data-mode="draft">📋 Draft</button>
+          </div>
+          <div class="mode-description" id="modeDescription">
+            <span class="mode-classic">Spin for random characters, battle other players!</span>
+          </div>
+          
           <label>Room Size:</label>
           <div class="room-size-buttons">
             <button class="size-btn active" data-size="2">2 Players</button>
@@ -140,6 +155,9 @@
     <div id="battleScreen" class="screen">
       <h2 class="battle-title">⚔️ BATTLE RESULTS ⚔️</h2>
       
+      <!-- Animated Showdown Container -->
+      <div id="battleShowdown" class="battle-showdown"></div>
+      
       <div id="battleArena" class="battle-arena"></div>
       
       <div id="winnerAnnouncement" class="winner-announcement"></div>
@@ -187,6 +205,54 @@
       <div id="sharedWinner" class="winner-announcement"></div>
       <a href="/" class="btn btn-primary">🎮 Play Now!</a>
     </div>
+
+    <!-- Draft Mode Screen -->
+    <div id="draftScreen" class="screen">
+      <div class="draft-header">
+        <h2 class="draft-title">📋 DRAFT MODE</h2>
+        <div id="draftTurnIndicator" class="turn-indicator"></div>
+        <div id="draftRoundInfo" class="draft-round-info"></div>
+      </div>
+      
+      <div class="draft-content">
+        <div class="draft-pool-section">
+          <h3>Available Characters</h3>
+          <div id="draftPool" class="draft-pool"></div>
+        </div>
+        
+        <div class="draft-players-section">
+          <h3>Players</h3>
+          <div id="draftPlayers" class="draft-players"></div>
+        </div>
+      </div>
+      
+      <!-- Chat Box for Draft -->
+      <div class="chat-container draft-chat">
+        <div class="chat-header">💬 Chat</div>
+        <div id="draftChatMessages" class="chat-messages"></div>
+        <div class="chat-input-container">
+          <input type="text" id="draftChatInput" placeholder="Type a message..." maxlength="200">
+          <button id="draftSendChatBtn" class="btn btn-small">Send</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Survival Mode Screen -->
+    <div id="survivalScreen" class="screen">
+      <div id="survivalArena" class="survival-arena"></div>
+      <div id="survivalResult" class="survival-result"></div>
+      <div id="survivalActions" class="survival-actions"></div>
+      
+      <!-- Chat Box for Survival -->
+      <div class="chat-container survival-chat">
+        <div class="chat-header">💬 Chat</div>
+        <div id="survivalChatMessages" class="chat-messages"></div>
+        <div class="chat-input-container">
+          <input type="text" id="survivalChatInput" placeholder="Type a message..." maxlength="200">
+          <button id="survivalSendChatBtn" class="btn btn-small">Send</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Toast notification -->
@@ -201,6 +267,9 @@
   </audio>
 
   <script src="/socket.io/socket.io.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/characterImages.js"></script>
+  <script src="js/battleAnimations.js"></script>
   <script src="game.js"></script>
 </body>
 </html>
