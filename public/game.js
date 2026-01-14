@@ -140,6 +140,8 @@ function setupEventListeners() {
   document.getElementById('rematchBtn').addEventListener('click', () => {
     socket.emit('rematch');
   });
+  document.getElementById('leaveRoomBtn').addEventListener('click', leaveRoom);
+  document.getElementById('leaveLobbyBtn').addEventListener('click', leaveRoom);
   
   // Chat - multiple chat inputs
   setupChatInput('chatInput', 'sendChatBtn');
@@ -793,6 +795,35 @@ function showToast(message, type = 'info') {
   setTimeout(() => {
     toast.classList.remove('show');
   }, 3000);
+}
+
+function leaveRoom() {
+  // Disconnect and reconnect to leave the room cleanly
+  socket.disconnect();
+  socket.connect();
+  
+  // Reset state
+  currentRoom = null;
+  isSpectator = false;
+  isMyTurn = false;
+  characters = [];
+  
+  // Clear chat messages
+  ['chatMessages', 'gameChatMessages', 'battleChatMessages', 'spectatorChatMessages'].forEach(id => {
+    const container = document.getElementById(id);
+    if (container) container.innerHTML = '';
+  });
+  
+  // Reset ready button
+  const readyBtn = document.getElementById('readyBtn');
+  if (readyBtn) {
+    readyBtn.disabled = false;
+    readyBtn.textContent = '✅ Ready!';
+  }
+  
+  // Go back to menu
+  showScreen('menu');
+  showToast('Left the room');
 }
 
 // Make function available globally for onclick handlers

@@ -396,6 +396,12 @@ io.on('connection', (socket) => {
             players: room.players
           });
         }
+      } else {
+        // Same player still has spins left - emit nextTurn to re-enable their button
+        io.to(socket.roomCode).emit('nextTurn', {
+          currentPlayer: player.id,
+          players: room.players
+        });
       }
     }, 4000); // Match spin animation duration
   });
